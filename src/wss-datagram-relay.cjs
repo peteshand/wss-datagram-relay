@@ -7,6 +7,7 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const http = require('node:http');
 const https = require('node:https');
 
 const RELAY_PROTOCOL = 'UE-WASM-WSS-RELAY-1';
@@ -27,7 +28,7 @@ function parseArgumentList(argv) {
     const key = argv[index];
     if (!key.startsWith('--')) throw new Error(`Unexpected argument: ${key}`);
     const name = key.slice(2);
-    if (name === 'help') { result.help = true; continue; }
+    if (name === 'help' || name === 'http') { result[name] = true; continue; }
     const value = argv[++index];
     if (!value || value.startsWith('--')) throw new Error(`Missing value for --${name}`);
     result[name] = value;
@@ -46,16 +47,22 @@ function positiveInteger(value, name, fallback) {
 function relayConfig(argv) {
   const args = parseArgumentList(argv);
   if (args.help) return {help: true};
+  const plainHttp = args.http === true;
   const pem = !!args.cert || !!args.key;
   const pfx = !!args.pfx;
-  if ((pem && (!args.cert || !args.key)) || (pem && pfx) || (!pem && !pfx)) {
+  if ((pem && (!args.cert || !args.key)) || (pem && pfx) || (!plainHttp && !pem && !pfx) || (plainHttp && (pem || pfx))) {
     throw new Error('TLS is required: provide either --cert <pem> with --key <pem>, or --pfx <bundle>.');
+  }
+  const host = args.host || '0.0.0.0';
+  if (plainHttp && !['127.0.0.1', '::1', 'localhost'].includes(host.toLowerCase())) {
+    throw new Error('--http is only permitted with --host 127.0.0.1, ::1, or localhost; terminate public TLS at the reverse proxy.');
   }
   const port = positiveInteger(args.port, 'port', 8443);
   if (port > 65535) throw new Error('--port must be at most 65535');
   return {
-    host: args.host || '0.0.0.0',
+    host,
     port,
+    plainHttp,
     certificate: args.cert,
     key: args.key,
     pfx: args.pfx || null,
@@ -248,13 +255,16 @@ function parseWebSocketFrames(client) {
 
 function startRelay(config) {
   const core = new RelayCore(config);
-  const tls = config.pfx
-    ? {pfx: fs.readFileSync(config.pfx), ...(config.pfxPassphrase ? {passphrase: config.pfxPassphrase} : {})}
-    : {cert: fs.readFileSync(config.certificate), key: fs.readFileSync(config.key)};
-  const server = https.createServer(tls, (_request, response) => {
+  const requestHandler = (_request, response) => {
     response.writeHead(404, {'Cache-Control': 'no-store'});
     response.end();
-  });
+  };
+  const server = config.plainHttp ? http.createServer(requestHandler) : https.createServer(
+    config.pfx
+      ? {pfx: fs.readFileSync(config.pfx), ...(config.pfxPassphrase ? {passphrase: config.pfxPassphrase} : {})}
+      : {cert: fs.readFileSync(config.certificate), key: fs.readFileSync(config.key)},
+    requestHandler
+  );
   const clients = new Set();
   const originAllowed = origin => !config.expectedOrigin || origin === config.expectedOrigin;
 
@@ -318,10 +328,11 @@ function startRelay(config) {
 
 function usage() {
   return [
-    'Usage: node wss-datagram-relay.cjs (--cert <certificate.pem> --key <private-key.pem> | --pfx <bundle>) [options]',
+    'Usage: node wss-datagram-relay.cjs (--cert <certificate.pem> --key <private-key.pem> | --pfx <bundle> | --http --host <loopback>) [options]',
     'Options: --host <address> --port <port> --build-id <build-id> --origin <https://game.example>',
     '         --max-queue-bytes <bytes> --max-packets-per-second <count> --max-bytes-per-second <bytes>',
-    '         --heartbeat-ms <milliseconds> --timeout-ms <milliseconds> --pfx-passphrase <passphrase>'
+    '         --heartbeat-ms <milliseconds> --timeout-ms <milliseconds> --pfx-passphrase <passphrase>',
+    '         --http only permits a loopback listener for TLS termination by a reverse proxy.'
   ].join('\n');
 }
 
@@ -331,7 +342,7 @@ if (require.main === module) {
     if (config.help) { console.log(usage()); process.exit(0); }
     const relay = startRelay(config);
     relay.listen().then(address => {
-      console.log(`WSS datagram relay listening at wss://${address.address}:${address.port}/`);
+      console.log(`${config.plainHttp ? 'WS' : 'WSS'} datagram relay listening at ${config.plainHttp ? 'ws' : 'wss'}://${address.address}:${address.port}/`);
       console.log(`protocol=${RELAY_PROTOCOL}; build=${config.expectedBuild || 'any'}; origin=${config.expectedOrigin || 'any'}`);
     }).catch(error => { console.error(error.stack || error); process.exitCode = 1; });
     process.on('SIGINT', () => relay.close().then(() => process.exit(0)));

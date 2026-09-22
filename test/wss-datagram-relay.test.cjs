@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const {RELAY_PROTOCOL, RelayCore, decodeDatagram, relayConfig} = require('../src/wss-datagram-relay.cjs');
+const {RELAY_PROTOCOL, RelayCore, decodeDatagram, relayConfig, startRelay} = require('../src/wss-datagram-relay.cjs');
 
 function client(name, queue = true) {
   return {
@@ -31,6 +31,14 @@ function datagram(sourceIp, sourcePort, destinationIp, destinationPort, payload 
 }
 
 assert.throws(() => relayConfig([]), /TLS is required/);
+const reverseProxyConfig = relayConfig(['--http', '--host', '127.0.0.1', '--port', '8443', '--build-id', 'build-a']);
+assert.equal(reverseProxyConfig.plainHttp, true);
+assert.equal(reverseProxyConfig.host, '127.0.0.1');
+assert.throws(() => relayConfig(['--http', '--host', '0.0.0.0']), /only permitted/);
+assert.throws(() => relayConfig(['--http', '--host', '127.0.0.1', '--cert', 'certificate.pem', '--key', 'private-key.pem']), /TLS is required/);
+const httpRelay = startRelay({...reverseProxyConfig, port: 0});
+assert.equal(httpRelay.server.constructor.name, 'Server', 'HTTP relay does not load local TLS material');
+httpRelay.server.close();
 const config = relayConfig(['--cert', 'certificate.pem', '--key', 'private-key.pem', '--port', '9443', '--build-id', 'build-a']);
 assert.equal(config.port, 9443);
 assert.equal(config.expectedBuild, 'build-a');
