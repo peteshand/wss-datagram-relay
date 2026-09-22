@@ -1,0 +1,16 @@
+{
+  "name": "lyra-wss-datagram-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TLS WebSocket virtual-datagram relay for Unreal WebAssembly multiplayer",
+  "main": "src/wss-datagram-relay.cjs",
+  "scripts": {
+    "start": "node src/wss-datagram-relay.cjs",
+    "check": "node --check src/wss-datagram-relay.cjs && node --check test/wss-datagram-relay.test.cjs && node test/wss-datagram-relay.test.cjs",
+    "test": "node test/wss-datagram-relay.test.cjs",
+    "test:tls": "node test/wss-tls-integration.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
