@@ -1,0 +1,16 @@
+{
+  "name": "lyra-webassembly-deployment",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verify, package, and publish sealed Lyra WebAssembly releases.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node --check scripts/verify-webassembly-manifest.cjs && node --check scripts/bundle-release.cjs && node --check scripts/upload-release.cjs && node test/verify-webassembly-manifest.test.cjs && node test/bundle-release.test.cjs",
+    "verify": "node scripts/verify-webassembly-manifest.cjs",
+    "bundle": "node scripts/bundle-release.cjs",
+    "upload": "node scripts/upload-release.cjs",
+    "publish": "node scripts/publish-release.cjs"
+  }
+}

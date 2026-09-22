@@ -1,0 +1,14 @@
+# Do not commit AWS credentials, deployment overrides, or generated releases.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+releases/
+staging/
+
+# Local editor files
+.vscode/
+*.code-workspace
